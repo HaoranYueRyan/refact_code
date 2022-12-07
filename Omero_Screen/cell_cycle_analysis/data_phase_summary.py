@@ -21,57 +21,63 @@ def plate_get_well(plate_list,conn):
     return plate_well_dict
 
 
+def dict_wells_corr(F_dir):
+    """
+    # %% Importing RAW data from path of file & excluding inconsistent wells
 
+    :param F_dir: the path of RAW
+    :return: A dataframe and adding a columns called the cell_id that group by "plate_id", "well_id", "image_id", "Cyto_ID", which make sure that each segmented cell will have individual number.
+    """
 
-
-
-def dict_wells_corr(self):
-        """
-        # %% Establishing inconsistent wells which should be excluded from the analysis
-        :param list_files_path:
-        :return:
-        """
-    # %% Importing RAW data & excluding inconsistent wells
-    list_files = list(filter(lambda file: ".csv" in file, listdir(self.F_dir + "/data/")))
+    list_files = list(filter(lambda file: ".csv" in file, listdir(F_dir + "/data/")))
     data_raw = pd.DataFrame()
     for file in list_files:
-        tmp_data = pd.read_csv(self.F_dir + "data/" + file, sep=",")
-        tmp_plate = tmp_data["plate_id"].unique()[0]
-        Dict_plate_well = plate_get_well(tmp_plate)
-        if tmp_plate in Dict_plate_well.keys():
-            tmp_data = tmp_data.copy().loc[tmp_data["well_id"].isin(Dict_plate_well[tmp_plate])]
-        # if tmp_plate in wells_exclude.keys():
-        #     tmp_data = tmp_data.copy().loc[~tmp_data["well_id"].isin(wells_exclude[tmp_plate])]
-            data_raw = pd.concat([data_raw, tmp_data])
+        tmp_data = pd.read_csv(F_dir + "data/" + file, sep=",")
+        try:
+            if "plate_id" and "well_id" in tmp_data.columns:
+                tmp_plate = tmp_data["plate_id"].unique()[0]
+                Dict_plate_well = plate_get_well(tmp_plate)
+
+                if tmp_plate in Dict_plate_well.keys():
+                   tmp_data = tmp_data.copy().loc[tmp_data["well_id"].isin(Dict_plate_well[tmp_plate])]
+                data_raw = pd.concat([data_raw, tmp_data])
+        except KeyError:
+            print('Not Exist: plate_id, well_id')
         del ([tmp_data, file])
-        data_raw.loc[:, "cell_id"] = data_raw.groupby(["plate_id", "well_id", "image_id", "Cyto_ID"]).ngroup()
+    data_raw.loc[:, "cell_id"] = data_raw.groupby(["plate_id", "well_id", "image_id", "Cyto_ID"]).ngroup()
     return data_raw
 
 
-def assign_cell_cycle_phase(data, *args, ):
+def assign_cell_cycle_phase(data, *args,):
     """
+    # %% Selecting parameters of interest and aggregating counts of nuclei and total cellular DAPI signal
+      %% Normalising selected parameters & assigning cell cycle phases
 
-    :param data_raw:
-    :return:
+    :param data:A data frame that including the necessary parameters
+    :param args:interesting parameters used for group data frame to aggregating counts of nuclei and total cellular DAPI signal
+    :return: data_IF (A dataframe assigned a cell cycle phase to each cell), data_thresholds (threshold values of normalised integrated DAPI intensities)
     """
-
-    data_IF = data_raw.groupby(list(args)).agg(
+    try:
+        data_IF = data.groupby(list(args)).agg(
         nuclei_count=("label", "count"),
         nucleus_area=("area_nucleus", "sum"),
         DAPI_total=("integrated_int_DAPI", "sum")).reset_index()
-    data_IF["condition"] = data_IF["condition"].astype(str)
+        data_IF["condition"] = data_IF["condition"].astype(str)
+    except KeyError:
+        print('Not Exist: label, area_nucleus,integrated_int_DAPI,condition')
     data_IF = fun_normalise(data=data_IF, values=["DAPI_total", "intensity_mean_EdU_cell", "intensity_mean_H3P_cell",
-                                                  "area_cell"])  # %% Normalising selected parameters & assigning cell cycle phases
+                                                  "area_cell"])
     data_IF, data_thresholds = fun_CellCycle(data=data_IF, ctr_col="condition", ctr_cond="0.0")
     return data_IF, data_thresholds
 
-def cell_cycle_percentage(data):
-        """
-        # %% Establishing proportions (%) of cell cycle phases
+def cell_cycle_summary(data_dir):
+    """
+    # %% Establishing proportions (%) of cell cycle phases
+    calling functions of dict_wells_corr and assign_cell_cycle_phase to get the data_IF, data_thresholds
 
-        :param data_IF:
-        :return: A dataframe
-        """
+    :param data_dir: the path of RAW data frame
+    :return: A dataframe summarized each cell cycle phase
+    """
     data_IF, data_thresholds = assign_cell_cycle_phase(dict_wells_corr(data_dir))
     data_cell_cycle = pd.DataFrame()
     for experiment in data_IF["experiment"].unique():
@@ -99,6 +105,23 @@ def cell_cycle_percentage(data):
     return data_cell_cycle_summary
 
 
+def save_folder(Path_data,exist_ok=True):
+    """  Establishing path to the data and creating a folder to save exported .pdf files
+
+    :param Path_data: the path used to save the exported .pdf files
+    :return: This method does not return any value.
+    """
+    # path_data = "/Users/Lab/Desktop/CDK1ArrestCheck_20hr_1/"
+    path_export = Path_data+ "/Figures/"
+    if exist_ok==True:
+        os.makedirs(path_export, exist_ok=True)
+    else:
+        isExist = os.path.exists(path_export)
+        try:
+            if isExist==False:
+                os.makedirs(path_export)
+        except FileExistsError:
+            print('File already exists')
 
 
 
@@ -107,22 +130,6 @@ def cell_cycle_percentage(data):
 
 
 
-
-
-
-
-
-
-
-    def _result_folder(self):
-        """  Establishing path to the data and creating a folder to save exported .pdf files
-
-        :param Path_data: the path used to save the exported .pdf files
-        :return: A floder
-        """
-        # path_data = "/Users/Lab/Desktop/CDK1ArrestCheck_20hr_1/"
-        path_export = Path_data+ "/Figures/"
-        return os.makedirs(path_export, exist_ok=True)
 
 def local_data(data_IF,*args,):
     for experiment in data_IF[args[0]].unique():
